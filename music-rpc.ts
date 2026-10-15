@@ -301,6 +301,10 @@ async function getAlbumArtwork(
 //#endregion
 
 //#region Extras
+// Discord only accepts public https URLs for assets, so this must stay hosted.
+const FALLBACK_ARTWORK_URL = "https://cdn.jameslin.info/tap/reserve.png";
+const FALLBACK_RETRY_MS = 5 * 60 * 1000;
+
 async function fetchTrackExtras(
   appName: iTunesAppName,
   properties: iTunesProperties,
@@ -326,8 +330,15 @@ async function fetchTrackExtras(
 
   if (!extras.artworkUrl) {
     const uploaded = await uploadedLocalArtworkUrl(appName);
-    extras.artworkUrl = uploaded?.url;
-    extras.expiresAt = uploaded?.expiresAt;
+    if (uploaded) {
+      extras.artworkUrl = uploaded.url;
+      extras.expiresAt = uploaded.expiresAt;
+    } else {
+      // No artwork could be found or uploaded: use a hosted placeholder and
+      // expire the cache entry soon so the upload is retried later.
+      extras.artworkUrl = FALLBACK_ARTWORK_URL;
+      extras.expiresAt = Date.now() + FALLBACK_RETRY_MS;
+    }
   }
 
   return extras;
@@ -387,11 +398,11 @@ function findMatchingResult(
 async function uploadedLocalArtworkUrl(
   appName: iTunesAppName,
 ): Promise<{ url: string; expiresAt: number } | undefined> {
-  const localArtwork = await getAlbumArtwork(appName);
-  if (!localArtwork) {
-    return undefined;
-  }
   try {
+    const localArtwork = await getAlbumArtwork(appName);
+    if (!localArtwork) {
+      return undefined;
+    }
     return await litterboxUpload(localArtwork);
   } catch (err) {
     console.error("Failed to upload local artwork:", err);
